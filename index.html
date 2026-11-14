@@ -276,10 +276,10 @@ var S = {
   photo: LS.get('mg_photo', ''),
   view: 'inicio', servTab: 'next', gasMode: 'kml', busy: false,
   obd: { status: 'off', live: {}, dtcs: null, log: '' },
-  parts: { q: '', res: null, loading: false }
+  parts: { q: '', res: null, loading: false, shop: '' }
 };
 function emptyData() {
-  return { config: { vehiculo_marca: 'Chevrolet', vehiculo_modelo: 'Colorado', vehiculo_anio: '2016', vehiculo_version: 'Crew Cab', vehiculo_motor: '2.5L', vehiculo_color: 'Gris Grafito', odometro_manual: '0', email: '', wa_phone: '', wa_apikey: '', ntfy_topic: '', aviso_km_antes: '1000', aviso_dias_antes: '14', fecha_verificacion: '', fecha_seguro: '', ml_client_id: '', ml_client_secret: '' }, servicios: [], gasolina: [], fallas: [], tiendas: [] };
+  return { config: { vehiculo_marca: 'Chevrolet', vehiculo_modelo: 'Colorado', vehiculo_anio: '2016', vehiculo_version: 'Crew Cab', vehiculo_motor: '2.5L', vehiculo_color: 'Gris Grafito', odometro_manual: '0', email: '', wa_phone: '', wa_apikey: '', ntfy_topic: '', aviso_km_antes: '1000', aviso_dias_antes: '14', fecha_verificacion: '', fecha_seguro: '', serpapi_key: '' }, servicios: [], gasolina: [], fallas: [], tiendas: [] };
 }
 if (!S.data) S.data = emptyData();
 function remote() { return !!(S.conn.url && S.conn.token); }
@@ -566,21 +566,26 @@ function vPartes() {
   ];
   var res = '';
   if (q) {
-    var ml = P.res && P.res.mercadolibre || [];
-    if (P.loading) res += '<div class="card row gap10"><div class="spin" style="border-color:rgba(23,71,201,.25);border-top-color:var(--blue)"></div><span class="small">Buscando precios…</span></div>';
-    if (ml.length) {
-      res += '<span class="lbl">Mercado Libre · ordenado por precio</span><div class="list">' + ml.slice(0, 8).map(function (it, i) {
-        return '<a class="card tight result" target="_blank" rel="noopener" href="' + esc(it.url) + '" style="text-decoration:none;color:inherit"><img src="' + esc(it.imagen) + '" alt="" loading="lazy"><div class="grow col" style="gap:3px"><span style="font-size:13px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + esc(it.titulo) + '</span><div class="row gap8">' + (i === 0 ? '<span class="badge">MEJOR PRECIO</span>' : '') + (it.envio_gratis ? '<span class="small">Envío gratis</span>' : '') + '</div></div><span class="price">' + money(it.precio) + '</span></a>';
-      }).join('') + '</div>';
+    var R = P.res || {}, all = R.resultados || [];
+    var shops = []; all.forEach(function (it) { if (shops.indexOf(it.tienda) < 0) shops.push(it.tienda); });
+    var list = P.shop ? all.filter(function (it) { return it.tienda === P.shop; }) : all;
+    if (P.loading) res += '<div class="card row gap10"><div class="spin" style="border-color:rgba(23,71,201,.25);border-top-color:var(--blue)"></div><span class="small">Buscando precios en las tiendas…</span></div>';
+    if (all.length) {
+      var min = all[0].precio, max = all[all.length - 1].precio;
+      res += '<div class="card navy row between" style="padding:14px 16px"><div class="col"><span class="sub" style="font-size:12px">' + all.length + ' ofertas en ' + shops.length + ' tiendas</span><span style="font-size:20px;font-weight:800">' + money(min) + ' – ' + money(max) + '</span></div>' + (max > min ? '<span class="pill">Ahorras hasta ' + money(Math.round(max - min)) + '</span>' : '') + '</div>';
+      res += '<div class="chips"><button class="chip ' + (!P.shop ? 'on' : '') + '" onclick="S.parts.shop=\'\';render()">Todas</button>' + shops.map(function (sh, i) { return '<button class="chip ' + (P.shop === sh ? 'on' : '') + '" onclick="S.parts.shop=S.parts.res.resultados.map(function(x){return x.tienda}).filter(function(v,j,a){return a.indexOf(v)===j})[' + i + '];render()">' + esc(sh) + '</button>'; }).join('') + '</div>';
+      res += '<div class="list">' + list.map(function (it) {
+        var best = it.precio === min;
+        return '<a class="card tight col gap8" target="_blank" rel="noopener" href="' + esc(it.url) + '" style="text-decoration:none;color:inherit"><div class="result"><img src="' + esc(it.imagen) + '" alt="" loading="lazy" referrerpolicy="no-referrer"><div class="grow col" style="gap:4px"><div class="row gap8" style="flex-wrap:wrap"><span style="font-size:12px;font-weight:800;color:var(--blue)">' + esc(it.tienda) + '</span>' + (best ? '<span class="badge">MEJOR PRECIO</span>' : '') + (it.usado ? '<span class="badge" style="background:#FFF6DB;color:#6B4E00">USADO</span>' : '') + '</div><span style="font-size:13px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + esc(it.titulo) + '</span>' + (it.envio || it.rating ? '<span class="small">' + esc([it.rating ? '★ ' + it.rating + (it.resenas ? ' (' + it.resenas + ')' : '') : '', it.envio].filter(Boolean).join(' · ')) + '</span>' : '') + '</div><span class="price">' + money(it.precio) + '</span></div></a>';
+      }).join('') + '</div><span class="small" style="text-align:center">Precios de Google Shopping' + (R.cache ? ' (búsqueda guardada, se actualiza cada 6 h)' : '') + '. Confirma en la tienda antes de comprar.</span>';
     } else if (P.res && !P.loading) {
-      res += '<div class="banner">' + (P.res.ml_estado === 'sin_clave' ? 'Para ver precios y fotos de Mercado Libre aquí mismo, agrega tu clave de desarrollador en Ajustes. Mientras, usa los botones de cada tienda.' : 'No pude traer precios de Mercado Libre ahora. Usa los botones de cada tienda.') + '</div>';
+      res += '<div class="banner">' + (R.estado === 'sin_clave' ? 'Para ver aquí los <b>precios y fotos de todas las tiendas</b>, pon tu clave gratis de SerpApi en <a href="#ajustes">Ajustes</a>. Mientras, usa los botones de abajo.' : R.estado === 'ok' ? 'No encontré ofertas con precio para esa búsqueda. Prueba con otras palabras o usa los botones de abajo.' : 'No pude traer precios ahora (' + esc(R.error || 'sin conexión') + '). Usa los botones de abajo.') + '</div>';
     }
-    res += '<span class="lbl">Buscar en cada tienda</span><div class="list">' + stores.map(function (s) {
+    res += '<span class="lbl" style="margin-top:4px">Abrir directo en cada tienda</span><div class="list">' + stores.map(function (s) {
       return '<div class="card tight col gap10"><div class="row gap10"><span style="width:10px;height:10px;border-radius:50%;background:' + s.c + '"></span><div class="grow col"><span class="t" style="font-size:15px;font-weight:800">' + s.n + '</span><span class="m small">' + s.d + '</span></div></div><div class="row gap8">' +
-        '<a class="btn sm blue" style="flex:1" target="_blank" rel="noopener" href="' + s.url + '">' + icon('ext', 16, 2) + 'Ver precios</a>' +
+        '<a class="btn sm soft" style="flex:1" target="_blank" rel="noopener" href="' + s.url + '">' + icon('ext', 16, 2) + 'Abrir tienda</a>' +
         (s.maps ? '<a class="btn sm soft" style="flex:1" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(s.maps + ' cerca de mí') + '">' + icon('pin', 16, 2) + 'Sucursales</a>' : '') + '</div></div>';
-    }).join('') + '</div>' +
-      '<a class="btn ghost sm" target="_blank" rel="noopener" href="https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(full) + '">' + icon('img', 18, 2) + 'Ver imágenes de la pieza</a>';
+    }).join('') + '</div>';
   }
   var tiendas = S.data.tiendas;
   return header('Buscar partes', esc(veh), '') +
@@ -594,12 +599,12 @@ function vPartes() {
     }).join('') : '<div class="empty" style="padding:14px">Guarda aquí las refaccionarias que usas, con teléfono y dirección, para llamarlas con un toque.</div>') + '</div></div>';
 }
 function searchParts(q) {
-  q = String(q || '').trim(); S.parts.q = q; S.parts.res = null;
+  q = String(q || '').trim(); S.parts.q = q; S.parts.res = null; S.parts.shop = '';
   if (!q) { render(); return; }
   if (remote()) {
     S.parts.loading = true; render();
-    api('searchParts', { q: q }).then(function (r) { S.parts.res = r; }).catch(function () { S.parts.res = { mercadolibre: [], ml_estado: 'error' }; }).then(function () { S.parts.loading = false; if (S.view === 'partes') render(); });
-  } else { S.parts.res = { mercadolibre: [], ml_estado: 'sin_clave' }; render(); }
+    api('searchParts', { q: q }).then(function (r) { S.parts.res = r; }).catch(function (e) { S.parts.res = { resultados: [], estado: 'error', error: e.message }; }).then(function () { S.parts.loading = false; if (S.view === 'partes') render(); });
+  } else { S.parts.res = { resultados: [], estado: 'sin_clave' }; render(); }
 }
 
 /* ---------- AJUSTES ---------- */
@@ -613,7 +618,7 @@ function vAjustes() {
     '<span style="font-weight:800;margin-top:6px">Documentos</span><div class="grid2">' + f('fecha_verificacion', 'VERIFICACIÓN', 'date') + f('fecha_seguro', 'VENCE SEGURO', 'date') + '</div>' +
     '<span style="font-weight:800;margin-top:6px">Avisos</span>' + f('email', 'CORREO', 'email', 'tu@correo.com') + f('wa_phone', 'WHATSAPP (CON LADA)', 'tel', '+5218681234567') + f('wa_apikey', 'CLAVE CALLMEBOT', 'text', 'te la manda CallMeBot') + f('ntfy_topic', 'TEMA NTFY (NOTIFICACIONES)', 'text', 'migaraje-alberto-xxxx') +
     '<div class="grid2">' + f('aviso_km_antes', 'AVISAR KM ANTES', 'number') + f('aviso_dias_antes', 'AVISAR DÍAS ANTES', 'number') + '</div>' +
-    '<span style="font-weight:800;margin-top:6px">Mercado Libre (opcional)</span>' + f('ml_client_id', 'APP ID') + f('ml_client_secret', 'CLAVE SECRETA') +
+    '<span style="font-weight:800;margin-top:6px">Precios de tiendas</span><span class="small">Clave gratis de <a href="https://serpapi.com/manage-api-key" target="_blank" rel="noopener">SerpApi</a> (250 búsquedas al mes, sin tarjeta). Muestra precios y fotos de AutoZone, Mercado Libre, Walmart, Amazon y más.</span>' + f('serpapi_key', 'CLAVE SERPAPI') +
     '<button class="btn">Guardar ajustes</button>' + (remote() ? '<div class="grid2"><button type="button" class="btn soft sm" onclick="testAlerts()">Probar avisos</button><button type="button" class="btn soft sm" onclick="runChecks()">Revisar ahora</button></div>' : '<span class="small">Los avisos por correo, WhatsApp y notificación funcionan al conectar Google Sheets.</span>') + '</form>' +
     '<form class="card col gap12" onsubmit="event.preventDefault();saveConn(this)"><span style="font-weight:800">Conexión con Google Sheets</span><label class="field">URL DE LA APLICACIÓN WEB<input name="url" value="' + esc(S.conn.url) + '" placeholder="https://script.google.com/macros/s/…/exec"></label><label class="field">CLAVE<input name="token" value="' + esc(S.conn.token) + '" placeholder="la que aparece en la hoja Config"></label><button class="btn blue">' + (remote() ? 'Actualizar conexión' : 'Conectar') + '</button>' +
     (remote() ? '<button type="button" class="btn ghost sm" onclick="disconnect()">Desconectar (modo prueba)</button>' : '<button type="button" class="btn ghost sm" onclick="loadDemo()">Cargar datos de ejemplo</button>') + '</form>' +
@@ -622,7 +627,7 @@ function vAjustes() {
 function saveCfg(form) {
   var o = {}; Array.prototype.forEach.call(form.elements, function (el) { if (el.name) o[el.name] = el.value.trim(); });
   if (o.wa_apikey === '••••') delete o.wa_apikey;
-  if (o.ml_client_secret === '••••') delete o.ml_client_secret;
+  if (o.serpapi_key === '••••') delete o.serpapi_key;
   mutate('saveConfig', o); toast('Ajustes guardados');
 }
 function saveConn(form) {
